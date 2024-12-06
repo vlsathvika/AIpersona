@@ -8,4 +8,4 @@ openpyxl
 python-pptx
 fpdf
 groq
-docx
+python-docx
