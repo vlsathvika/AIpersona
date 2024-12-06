@@ -102,8 +102,8 @@ if password == 'AIpersona123':  # Replace with your desired password
         "Insurance": "Typically insured.",
         "Health Insurance Coverage": "Comprehensive.",
         "Chronic Conditions": "Not possible",
-}
-}
+    }
+    }
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = [
