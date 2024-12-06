@@ -3,7 +3,7 @@ import json
 import streamlit as st
 from fpdf import FPDF
 from groq import Groq
-from python-docx import Document
+
 
 # Function to convert JSON chat history to PDF
 def convert_json_to_pdf(json_data):
@@ -22,14 +22,7 @@ def convert_json_to_pdf(json_data):
     
     return pdf
     
-def convert_json_to_word(json_data):
-    doc = Document()
-    doc.add_heading('Chat Transcript', 0)
-    for message in json_data:
-        role = message['role']
-        content = message['content']
-        doc.add_paragraph(f"{role.capitalize()}: {content}")
-    return doc
+
 
 # Set your GroqCloud AI API key
 #os.environ["GROQ_API_KEY"] = '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'
@@ -211,12 +204,4 @@ else:
             pdf_data = f.read()
         
         st.download_button(label="Download PDF", data=pdf_data, file_name="chat_history.pdf", mime="application/pdf")
-    if st.button("Download Chat History as Word Document"):
-        with open('chat_history.json', 'r', encoding='utf-8') as f:
-            chat_history_json = json.load(f)
-        doc = convert_json_to_word(chat_history_json)
-        doc_output_path = 'chat_history.docx'
-        doc.save(doc_output_path)
-        with open(doc_output_path, 'rb') as f:
-            doc_data = f.read()
-        st.download_button(label="Download Word Document", data=doc_data, file_name="chat_history.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    
