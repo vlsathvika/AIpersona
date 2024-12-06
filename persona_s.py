@@ -2,6 +2,7 @@ import os
 import json
 import streamlit as st
 from fpdf import FPDF
+from groq import Groq
 
 # Function to convert JSON chat history to PDF
 def convert_json_to_pdf(json_data):
@@ -13,26 +14,20 @@ def convert_json_to_pdf(json_data):
         role = message['role']
         content = message['content']
         
+        # Encode content to utf-8
+        content = content.encode('latin-1', 'replace').decode('latin-1')
+        
         pdf.multi_cell(0, 10, f"{role.capitalize()}: {content}", border=0, align='L', fill=False)
     
     return pdf
 
-# Password input
-password_placeholder = st.empty()
-password = password_placeholder.text_input("Enter Password:", type="password", key="password_input")
+# Set your GroqCloud AI API key
+#os.environ["GROQ_API_KEY"] = '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'
 
-if password == 'AIpersona123':  # Replace with your desired password
-    password_placeholder.empty()  # Remove the password input field
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-    st.title("🧑‍💻 Brandience Online 💬 Chatbot")
-    """
-    My name is Sarah🤖. 
-    I know many things, ask me anything you like, 
-    but please. Dont ask me stupid questions❓
-    """
-
-    # Define the characters with their segments
-    characters = {
+# Define the characters with their segments
+characters = {
     "Balance Seekers": {
         "Name":" Ben",
         "Demographics": "Typically middle-aged, balanced gender distribution, moderate income.",
@@ -103,11 +98,25 @@ if password == 'AIpersona123':  # Replace with your desired password
         "Health Insurance Coverage": "Comprehensive.",
         "Chronic Conditions": "Not possible",
     }
-    }
+}
 
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
+def authenticate(password):
+    if password == 'correct_password':
+        st.session_state['authenticated'] = True
+    else:
+        st.error("Wrong password")
+
+if not st.session_state['authenticated']:
+    password = st.text_input("Enter Password", type="password")
+    if st.button("Submit"):
+        authenticate(password)
+else:
     if "messages" not in st.session_state:
         st.session_state["messages"] = [
-            {"role": "system", "content": "You are a friendly agent where you answers all the questions also remember about your characterstics and answer your health conditions based on that behavior."}
+            {"role": "system", "content": "You are a friendly agent where you answers all the questions also remember about your characterstics, do not forget the name and answer your health conditions based on that behavior."}
         ]
 
     # Function to append the response to the chat history
@@ -125,6 +134,12 @@ if password == 'AIpersona123':  # Replace with your desired password
     # Select a character
     character = st.sidebar.selectbox("Select a Character", list(characters.keys()))
 
+    # Get the bot's name for the selected character
+    bot_name = characters[character]["Name"]
+
+    st.title(f"🧑‍💻 {bot_name} Online 💬 Chatbot")
+    st.write(f"My name is {bot_name}🤖. I know many things, ask me anything you like, but please, don't ask me stupid questions❓")
+
     # Display character description
     st.header(f"{character}")
     for key, value in characters[character].items():
@@ -135,15 +150,18 @@ if password == 'AIpersona123':  # Replace with your desired password
     st.subheader("Ask General Questions")
     general_question = st.text_input("Ask a general question about this character's behaviors or values:")
 
-    # Get AI response for general questions
+    # Get GroqCloud AI response for general questions
     if st.button("Ask General Question"):
         if general_question:
             st.session_state["messages"].append({"role": "user", "content": f"As a {character}, {general_question}"})
             st.chat_message("user").write(general_question)
-            response = {"choices":[{"message":{"role":"assistant","content":"This is a mock response."}}]}  # Mock response for demonstration
-            msg = response['choices'][0]['message']
+            response = client.chat.completions.create(
+                messages=st.session_state["messages"],
+                model="llama3-8b-8192"
+            )
+            msg = response.choices[0].message
             append_to_chat_history(msg)
-            st.chat_message("assistant").write(msg['content'])
+            st.chat_message("assistant").write(msg.content)
             save_chat_history_to_file('chat_history.json')
         else:
             st.write("Please enter a question.")
@@ -152,15 +170,18 @@ if password == 'AIpersona123':  # Replace with your desired password
     st.subheader("Test Opinions on Advertising Creative")
     creative_input = st.text_input("Enter a headline or description of an image for the character to review:")
 
-    # Get AI response for advertising creative
+    # Get GroqCloud AI response for advertising creative
     if st.button("Test Creative"):
         if creative_input:
             st.session_state["messages"].append({"role": "user", "content": f"As a {character}, what do you think about this: {creative_input}"})
             st.chat_message("user").write(creative_input)
-            response = {"choices":[{"message":{"role":"assistant","content":"This is a mock response."}}]}  # Mock response for demonstration
-            msg = response['choices'][0]['message']
+            response = client.chat.completions.create(
+                messages=st.session_state["messages"],
+                model="llama3-8b-8192"
+            )
+            msg = response.choices[0].message
             append_to_chat_history(msg)
-            st.chat_message("assistant").write(msg['content'])
+            st.chat_message("assistant").write(msg.content)
             save_chat_history_to_file('chat_history.json')
         else:
             st.write("Please enter a headline or description.")
