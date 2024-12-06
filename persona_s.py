@@ -3,6 +3,7 @@ import json
 import streamlit as st
 from fpdf import FPDF
 from groq import Groq
+from docx import Document
 
 # Function to convert JSON chat history to PDF
 def convert_json_to_pdf(json_data):
