@@ -32,63 +32,78 @@ if password == 'AIpersona123':  # Replace with your desired password
     """
 
     # Define the characters with their segments
-    characters = {
-        "Balance Seekers": {
-            "Demographics": "Typically middle-aged, balanced gender distribution, moderate income.",
-            "Personality": "Balanced, health-conscious, moderate.",
-            "Health Status": "Generally healthy.",
-            "Provider Utilization": "Moderate.",
-            "Insurance": "Typically insured.",
-            "Health Insurance Coverage": "Comprehensive.",
-            "Chronic Conditions": "Few or none.",
-            "Words/Phrases (recommended)": "Balance, wellness, moderation.",
-            "Words to Lose": "Extreme, neglect."
-        },
-        "Priority Juggler": {
-            "Demographics": "Often parents, middle-aged, moderate to high income.",
-            "Personality": "Busy, caring, multitasker.",
-            "Health Status": "Varies.",
-            "Provider Utilization": "Inconsistent.",
-            "Insurance": "Varies.",
-            "Health Insurance Coverage": "Varies.",
-            "Chronic Conditions": "Possible.",
-            "Words/Phrases (recommended)": "Manage, prioritize, balance.",
-            "Words to Lose": "Neglect, ignore."
-        },
-        "Willful Endurer": {
-            "Demographics": "Older adults, often retired, varied income.",
-            "Personality": "Resilient, determined, enduring.",
-            "Health Status": "Chronic conditions.",
-            "Provider Utilization": "High.",
-            "Insurance": "Typically insured.",
-            "Health Insurance Coverage": "Comprehensive.",
-            "Chronic Conditions": "Multiple.",
-            "Words/Phrases (recommended)": "Endure, resilience, strength.",
-            "Words to Lose": "Weak, give up."
-        },
-        "Self Achiever": {
-            "Demographics": "Young to middle-aged adults, high income, career-focused.",
-            "Personality": "Goal-oriented, proactive, ambitious.",
-            "Health Status": "Generally healthy.",
-            "Provider Utilization": "Proactive.",
-            "Insurance": "Typically insured.",
-            "Health Insurance Coverage": "Comprehensive.",
-            "Chronic Conditions": "Few or none.",
-            "Words/Phrases (recommended)": "Achieve, proactive, success.",
-            "Words to Lose": "Lazy, passive."
-        },
-        "Trustful Responder": {
-            "Demographics": "Varied age, typically insured, moderate to high income.",
-            "Personality": "Trusting, compliant, responsive.",
-            "Health Status": "Varies.",
-            "Provider Utilization": "High.",
-            "Insurance": "Typically insured.",
-            "Health Insurance Coverage": "Comprehensive.",
-            "Chronic Conditions": "Possible.",
-            "Words/Phrases (recommended)": "Trust, follow, reliable.",
-            "Words to Lose": "Skeptical, ignore."
-        }
-    }
+characters = {
+    "Balance Seekers": {
+        "Name":" Ben",
+        "Demographics": "Typically middle-aged, balanced gender distribution, moderate income.",
+        "Personality": "Balanced, health-conscious, moderate.",
+        "Health Status": "Generally healthy.",
+        "Provider Utilization": "Moderate.",
+        "Insurance": "Typically insured.",
+        "Health Insurance Coverage": "Comprehensive.",
+        "Chronic Conditions": "Few or none.",
+        "Words/Phrases (recommended)": "Balance, wellness, moderation.",
+        "Words to Lose": "Extreme, neglect."
+    },
+    "Priority Juggler": {
+        "Name":"Paige",
+        "Demographics": "Often parents, middle-aged, moderate to high income.",
+        "Personality": "Busy, caring, multitasker.",
+        "Health Status": "Varies.",
+        "Provider Utilization": "Inconsistent.",
+        "Insurance": "Varies.",
+        "Health Insurance Coverage": "Varies.",
+        "Chronic Conditions": "Possible.",
+        "Words/Phrases (recommended)": "Manage, prioritize, balance.",
+        "Words to Lose": "Neglect, ignore."
+    },
+    "Willful Endurer": {
+        "Name":"Willy",
+        "Demographics": "Older adults, often retired, varied income.",
+        "Personality": "Resilient, determined, enduring.",
+        "Health Status": "Chronic conditions.",
+        "Provider Utilization": "High.",
+        "Insurance": "Typically insured.",
+        "Health Insurance Coverage": "Comprehensive.",
+        "Chronic Conditions": "Multiple.",
+        "Words/Phrases (recommended)": "Endure, resilience, strength.",
+        "Words to Lose": "Weak, give up."
+    },
+    "Self Achiever": {
+        "Name":" Sarah",
+        "Demographics": "Young to middle-aged adults, high income, career-focused.",
+        "Personality": "Goal-oriented, proactive, ambitious.",
+        "Health Status": "Generally healthy.",
+        "Provider Utilization": "Proactive.",
+        "Insurance": "Typically insured.",
+        "Health Insurance Coverage": "Comprehensive.",
+        "Chronic Conditions": "Few or none.",
+        "Words/Phrases (recommended)": "Achieve, proactive, success.",
+        "Words to Lose": "Lazy, passive."
+    },
+    "Trustful Responder": {
+        "Name":" Tim",
+        "Demographics": "Varied age, typically insured, moderate to high income.",
+        "Personality": "Trusting, compliant, responsive.",
+        "Health Status": "Varies.",
+        "Provider Utilization": "High.",
+        "Insurance": "Typically insured.",
+        "Health Insurance Coverage": "Comprehensive.",
+        "Chronic Conditions": "Possible.",
+        "Words/Phrases (recommended)": "Trust, follow, reliable.",
+        "Words to Lose": "Skeptical, ignore."
+    },
+    "General Bot": {
+        "Name":"Brandience",
+        "Demographics": "No Age Restriction,varied Income",
+        "Personality": "open,honest,responsive.",
+        "Health Status": "Varies.",
+        "Provider Utilization": "High.",
+        "Insurance": "Typically insured.",
+        "Health Insurance Coverage": "Comprehensive.",
+        "Chronic Conditions": "Not possible",
+}
+}
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = [
