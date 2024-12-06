@@ -32,7 +32,7 @@ if password == 'AIpersona123':  # Replace with your desired password
     """
 
     # Define the characters with their segments
-characters = {
+    characters = {
     "Balance Seekers": {
         "Name":" Ben",
         "Demographics": "Typically middle-aged, balanced gender distribution, moderate income.",
