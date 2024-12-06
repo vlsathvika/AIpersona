@@ -104,7 +104,7 @@ if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 def authenticate(password):
-    if password == 'correct_password':
+    if password == 'AIpersona123':
         st.session_state['authenticated'] = True
     else:
         st.error("Wrong password")
