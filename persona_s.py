@@ -24,8 +24,7 @@ def convert_json_to_pdf(json_data):
     
 
 
-# Set your GroqCloud AI API key
-#os.environ["GROQ_API_KEY"] = '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'
+
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
