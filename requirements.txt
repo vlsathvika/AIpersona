@@ -7,5 +7,5 @@ scipy
 openpyxl
 python-pptx
 fpdf
-groq
+openai
 python-docx
