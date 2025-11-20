@@ -2,7 +2,12 @@ import os
 import json
 import streamlit as st
 from fpdf import FPDF
-from groq import Groq
+import openai
+try:
+    from openai.error import OpenAIError
+except Exception:
+    # Some openai package versions may not expose openai.error; fall back to base Exception
+    OpenAIError = Exception
 
 
 # Function to convert JSON chat history to PDF
@@ -25,8 +30,30 @@ def convert_json_to_pdf(json_data):
 
 
 
+# Read OpenAI API key from Streamlit secrets or environment (safe access)
+openai_api_key = None
+try:
+    # Access st.secrets in a safe way; it may raise if no secrets file exists
+    if st.secrets and "OPENAI_API_KEY" in st.secrets:
+        openai_api_key = st.secrets["OPENAI_API_KEY"]
+except Exception:
+    # No Streamlit secrets configured; fall back to environment
+    openai_api_key = None
 
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+if not openai_api_key:
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
+
+# If still not found, allow entering a key at runtime for testing (will not be saved)
+if not openai_api_key:
+    test_key = st.text_input("Enter OpenAI API key for testing (will not be used persistently):", type="password")
+    if test_key:
+        openai_api_key = test_key
+        st.info("Using API key provided via the UI for this session only.")
+
+if not openai_api_key:
+    st.warning("OpenAI API key not found. Add it to Streamlit secrets as OPENAI_API_KEY, set the OPENAI_API_KEY environment variable, or paste it into the test field.")
+
+openai.api_key = openai_api_key
 
 # Define the characters with their segments
 characters = {
@@ -117,27 +144,54 @@ if not st.session_state['authenticated']:
         authenticate(password)
 else:
     if "messages" not in st.session_state:
-        st.session_state["messages"] = [
-            {"role": "system", "content": "You are a friendly agent where you answers all the questions also remember about your characterstics, do not forget the name and answer your health conditions based on that behavior."}
-        ]
-
-    # Function to append the response to the chat history
-    def append_to_chat_history(response):
-        st.session_state["messages"].append({
-            "role": response.role,
-            "content": response.content
-        })
+        # Try to load an existing chat history file
+        if os.path.exists('chat_history.json'):
+            try:
+                with open('chat_history.json', 'r', encoding='utf-8') as f:
+                    existing = json.load(f)
+                    if isinstance(existing, list) and existing:
+                        st.session_state["messages"] = existing
+                    else:
+                        st.session_state["messages"] = [{"role": "system", "content": "You are a friendly agent. Respond in the voice and behaviour of the selected character."}]
+            except Exception:
+                st.session_state["messages"] = [{"role": "system", "content": "You are a friendly agent. Respond in the voice and behaviour of the selected character."}]
+        else:
+            st.session_state["messages"] = [{"role": "system", "content": "You are a friendly agent. Respond in the voice and behaviour of the selected character."}]
 
     # Function to save the chat history to a file
     def save_chat_history_to_file(filename):
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(st.session_state["messages"], f, ensure_ascii=False)
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(st.session_state["messages"], f, ensure_ascii=False)
+        except Exception as e:
+            st.error(f"Failed to save chat history: {e}")
+
+    # Function to append the response to the chat history (supports dicts and objects)
+    def append_to_chat_history(response):
+        if isinstance(response, dict):
+            role = response.get('role', 'assistant')
+            content = response.get('content') or response.get('text') or ''
+        else:
+            role = getattr(response, 'role', 'assistant')
+            content = getattr(response, 'content', '')
+
+        st.session_state["messages"].append({"role": role, "content": content})
+        # Persist immediately
+        save_chat_history_to_file('chat_history.json')
 
     # Select a character
     character = st.sidebar.selectbox("Select a Character", list(characters.keys()))
 
     # Get the bot's name for the selected character
     bot_name = characters[character]["Name"]
+
+    # Model / response tuning controls in the sidebar
+    with st.sidebar.expander("Model settings"):
+        temp = st.slider("Temperature", 0.0, 1.0, 0.7, 0.05, help="Higher = more creative; lower = more deterministic")
+        top_p = st.slider("top_p", 0.0, 1.0, 1.0, 0.05)
+        freq_pen = st.slider("frequency_penalty", -2.0, 2.0, 0.0, 0.1)
+        pres_pen = st.slider("presence_penalty", -2.0, 2.0, 0.0, 0.1)
+        max_tokens = st.number_input("Max tokens", min_value=64, max_value=4096, value=1024, step=64)
 
     st.title(f"🧑‍💻 {bot_name} Online 💬 Chatbot")
     st.write(f"My name is {bot_name}🤖. I know many things, ask me anything you like, but please, don't ask me stupid questions❓")
@@ -151,20 +205,64 @@ else:
     # General questions section
     st.subheader("Ask General Questions")
     general_question = st.text_input("Ask a general question about this character's behaviors or values:")
+    # Helper to build a system message from the chosen character
+    def build_system_message(character_key):
+        attrs = characters.get(character_key, {})
+        parts = [f"You are {attrs.get('Name', 'the assistant')}."]
+        for k, v in attrs.items():
+            if k == 'Name':
+                continue
+            parts.append(f"{k}: {v}.")
+        # Add persona-specific guidance for wording
+        recommended = attrs.get('Words/Phrases (recommended)') or attrs.get('Words/Phrases')
+        avoid = attrs.get('Words to Lose') or attrs.get('Words to Avoid')
+        if recommended:
+            parts.append(f"Prefer using these words/phrases: {recommended}.")
+        if avoid:
+            parts.append(f"Avoid using these words/phrases: {avoid}.")
 
-    # Get GroqCloud AI response for general questions
+        parts.append("Answer concisely, stay in character, and be accurate. Provide 2-3 actionable, persona-aligned suggestions when asked for advice. If medical advice is requested, provide general info and recommend consulting a professional.")
+        return ' '.join(parts)
+
+    # Ensure the current system message reflects the selected character
+    system_msg = build_system_message(character)
+    if st.session_state["messages"]:
+        if st.session_state["messages"][0].get('role') == 'system':
+            st.session_state["messages"][0]['content'] = system_msg
+        else:
+            st.session_state["messages"].insert(0, {"role": "system", "content": system_msg})
+
+    # Ask a general question using OpenAI
     if st.button("Ask General Question"):
         if general_question:
-            st.session_state["messages"].append({"role": "user", "content": f"As a {character}, {general_question}"})
+            user_msg = f"As a {character}, {general_question}"
+            st.session_state["messages"].append({"role": "user", "content": user_msg})
             st.chat_message("user").write(general_question)
-            response = client.chat.completions.create(
-                messages=st.session_state["messages"],
-                model="llama3-8b-8192"
-            )
-            msg = response.choices[0].message
-            append_to_chat_history(msg)
-            st.chat_message("assistant").write(msg.content)
-            save_chat_history_to_file('chat_history.json')
+
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o",
+                    messages=st.session_state["messages"],
+                    temperature=temp,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    frequency_penalty=freq_pen,
+                    presence_penalty=pres_pen
+                )
+
+                choice = response['choices'][0]
+                if 'message' in choice:
+                    msg = choice['message']
+                else:
+                    msg = {"role": "assistant", "content": choice.get('text', '')}
+
+                append_to_chat_history(msg)
+                st.chat_message("assistant").write(msg.get('content', ''))
+
+            except OpenAIError as e:
+                st.error(f"OpenAI API error: {e}")
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
         else:
             st.write("Please enter a question.")
 
@@ -172,19 +270,37 @@ else:
     st.subheader("Test Opinions on Advertising Creative")
     creative_input = st.text_input("Enter a headline or description of an image for the character to review:")
 
-    # Get GroqCloud AI response for advertising creative
+    # Get OpenAI response for advertising creative
     if st.button("Test Creative"):
         if creative_input:
-            st.session_state["messages"].append({"role": "user", "content": f"As a {character}, what do you think about this: {creative_input}"})
+            user_msg = f"As a {character}, what do you think about this: {creative_input}"
+            st.session_state["messages"].append({"role": "user", "content": user_msg})
             st.chat_message("user").write(creative_input)
-            response = client.chat.completions.create(
-                messages=st.session_state["messages"],
-                model="llama3-8b-8192"
-            )
-            msg = response.choices[0].message
-            append_to_chat_history(msg)
-            st.chat_message("assistant").write(msg.content)
-            save_chat_history_to_file('chat_history.json')
+
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o",
+                    messages=st.session_state["messages"],
+                    temperature=temp,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    frequency_penalty=freq_pen,
+                    presence_penalty=pres_pen
+                )
+
+                choice = response['choices'][0]
+                if 'message' in choice:
+                    msg = choice['message']
+                else:
+                    msg = {"role": "assistant", "content": choice.get('text', '')}
+
+                append_to_chat_history(msg)
+                st.chat_message("assistant").write(msg.get('content', ''))
+
+            except OpenAIError as e:
+                st.error(f"OpenAI API error: {e}")
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
         else:
             st.write("Please enter a headline or description.")
 
@@ -203,4 +319,14 @@ else:
             pdf_data = f.read()
         
         st.download_button(label="Download PDF", data=pdf_data, file_name="chat_history.pdf", mime="application/pdf")
+    
+    # Clear chat history
+    if st.button("Clear Chat History"):
+        st.session_state["messages"] = [{"role": "system", "content": build_system_message(character)}]
+        try:
+            if os.path.exists('chat_history.json'):
+                os.remove('chat_history.json')
+        except Exception:
+            pass
+        st.success("Chat history cleared.")
     
