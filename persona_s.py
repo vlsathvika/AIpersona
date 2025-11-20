@@ -200,6 +200,48 @@ else:
         # Persist immediately
         save_chat_history_to_file('chat_history.json')
 
+    # Normalize a choice object/dict from different SDKs into a simple message dict
+    def normalize_choice_to_message(choice):
+        role = None
+        content = ''
+        try:
+            if isinstance(choice, dict):
+                # choice may contain a 'message' dict
+                message = choice.get('message') or choice.get('delta') or {}
+                if isinstance(message, dict):
+                    role = message.get('role')
+                    # content can be string or nested
+                    content = message.get('content') or ''
+                    # if content is a list, join
+                    if isinstance(content, list):
+                        content = ''.join([str(x) for x in content])
+                else:
+                    content = choice.get('text') or ''
+                    role = choice.get('role')
+            else:
+                # object with attributes
+                message = getattr(choice, 'message', None)
+                if message is not None:
+                    role = getattr(message, 'role', None)
+                    # message.content may be a string or list
+                    content = getattr(message, 'content', None)
+                    if content is None:
+                        # try common alternative attribute names
+                        content = getattr(message, 'text', '') or ''
+                    if isinstance(content, list):
+                        content = ''.join([str(x) for x in content])
+                else:
+                    content = getattr(choice, 'text', '') or ''
+                    role = getattr(choice, 'role', None)
+        except Exception:
+            content = ''
+
+        if not role:
+            role = 'assistant'
+        if content is None:
+            content = ''
+        return {"role": role, "content": content}
+
     # Select a character
     character = st.sidebar.selectbox("Select a Character", list(characters.keys()))
 
@@ -293,33 +335,10 @@ else:
                     except Exception:
                         choice = None
 
-                msg = None
-                if choice is not None:
-                    # try dict-like access
-                    try:
-                        if isinstance(choice, dict) and 'message' in choice:
-                            msg = choice['message']
-                    except Exception:
-                        pass
-                    # try attribute access
-                    if msg is None:
-                        try:
-                            msg = getattr(choice, 'message', None)
-                        except Exception:
-                            msg = None
-                    # fallback to text field
-                    if msg is None:
-                        try:
-                            if isinstance(choice, dict):
-                                text = choice.get('text')
-                            else:
-                                text = getattr(choice, 'text', None)
-                        except Exception:
-                            text = None
-                        msg = {"role": "assistant", "content": text or ''}
-
+                # Normalize choice into a plain message dict and display safely
+                msg = normalize_choice_to_message(choice)
                 append_to_chat_history(msg)
-                st.chat_message("assistant").write(msg.get('content', ''))
+                st.chat_message("assistant").write(msg["content"])
 
             except OpenAIError as e:
                 st.error(f"OpenAI API error: {e}")
@@ -371,33 +390,10 @@ else:
                     except Exception:
                         choice = None
 
-                msg = None
-                if choice is not None:
-                    # try dict-like access
-                    try:
-                        if isinstance(choice, dict) and 'message' in choice:
-                            msg = choice['message']
-                    except Exception:
-                        pass
-                    # try attribute access
-                    if msg is None:
-                        try:
-                            msg = getattr(choice, 'message', None)
-                        except Exception:
-                            msg = None
-                    # fallback to text field
-                    if msg is None:
-                        try:
-                            if isinstance(choice, dict):
-                                text = choice.get('text')
-                            else:
-                                text = getattr(choice, 'text', None)
-                        except Exception:
-                            text = None
-                        msg = {"role": "assistant", "content": text or ''}
-
+                # Normalize choice into a plain message dict and display safely
+                msg = normalize_choice_to_message(choice)
                 append_to_chat_history(msg)
-                st.chat_message("assistant").write(msg.get('content', ''))
+                st.chat_message("assistant").write(msg["content"])
 
             except OpenAIError as e:
                 st.error(f"OpenAI API error: {e}")
