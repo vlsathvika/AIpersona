@@ -9,6 +9,14 @@ except Exception:
     # Some openai package versions may not expose openai.error; fall back to base Exception
     OpenAIError = Exception
 
+# Detect new OpenAI Python v1+ interface (OpenAI client)
+try:
+    from openai import OpenAI as OpenAIClient
+    NEW_OPENAI_CLIENT = True
+except Exception:
+    OpenAIClient = None
+    NEW_OPENAI_CLIENT = False
+
 
 # Function to convert JSON chat history to PDF
 def convert_json_to_pdf(json_data):
@@ -54,6 +62,19 @@ if not openai_api_key:
     st.warning("OpenAI API key not found. Add it to Streamlit secrets as OPENAI_API_KEY, set the OPENAI_API_KEY environment variable, or paste it into the test field.")
 
 openai.api_key = openai_api_key
+
+# Create client for new SDK if available
+client = None
+if NEW_OPENAI_CLIENT:
+    try:
+        # instantiate with explicit API key so it works even if env isn't set
+        client = OpenAIClient(api_key=openai_api_key)
+    except Exception:
+        # fallback to default constructor which reads env
+        try:
+            client = OpenAIClient()
+        except Exception:
+            client = None
 
 # Define the characters with their segments
 characters = {
@@ -240,21 +261,62 @@ else:
             st.chat_message("user").write(general_question)
 
             try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=st.session_state["messages"],
-                    temperature=temp,
-                    max_tokens=max_tokens,
-                    top_p=top_p,
-                    frequency_penalty=freq_pen,
-                    presence_penalty=pres_pen
-                )
-
-                choice = response['choices'][0]
-                if 'message' in choice:
-                    msg = choice['message']
+                # Use new OpenAI client if available, otherwise fall back to old openai.ChatCompletion
+                if client is not None:
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=st.session_state["messages"],
+                        temperature=temp,
+                        max_tokens=max_tokens,
+                        top_p=top_p,
+                        frequency_penalty=freq_pen,
+                        presence_penalty=pres_pen,
+                    )
                 else:
-                    msg = {"role": "assistant", "content": choice.get('text', '')}
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",
+                        messages=st.session_state["messages"],
+                        temperature=temp,
+                        max_tokens=max_tokens,
+                        top_p=top_p,
+                        frequency_penalty=freq_pen,
+                        presence_penalty=pres_pen,
+                    )
+
+                # Normalize the choice/message extraction across SDK versions
+                choice = None
+                try:
+                    choice = response['choices'][0]
+                except Exception:
+                    try:
+                        choice = response.choices[0]
+                    except Exception:
+                        choice = None
+
+                msg = None
+                if choice is not None:
+                    # try dict-like access
+                    try:
+                        if isinstance(choice, dict) and 'message' in choice:
+                            msg = choice['message']
+                    except Exception:
+                        pass
+                    # try attribute access
+                    if msg is None:
+                        try:
+                            msg = getattr(choice, 'message', None)
+                        except Exception:
+                            msg = None
+                    # fallback to text field
+                    if msg is None:
+                        try:
+                            if isinstance(choice, dict):
+                                text = choice.get('text')
+                            else:
+                                text = getattr(choice, 'text', None)
+                        except Exception:
+                            text = None
+                        msg = {"role": "assistant", "content": text or ''}
 
                 append_to_chat_history(msg)
                 st.chat_message("assistant").write(msg.get('content', ''))
@@ -278,21 +340,61 @@ else:
             st.chat_message("user").write(creative_input)
 
             try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=st.session_state["messages"],
-                    temperature=temp,
-                    max_tokens=max_tokens,
-                    top_p=top_p,
-                    frequency_penalty=freq_pen,
-                    presence_penalty=pres_pen
-                )
-
-                choice = response['choices'][0]
-                if 'message' in choice:
-                    msg = choice['message']
+                if client is not None:
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=st.session_state["messages"],
+                        temperature=temp,
+                        max_tokens=max_tokens,
+                        top_p=top_p,
+                        frequency_penalty=freq_pen,
+                        presence_penalty=pres_pen,
+                    )
                 else:
-                    msg = {"role": "assistant", "content": choice.get('text', '')}
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o",
+                        messages=st.session_state["messages"],
+                        temperature=temp,
+                        max_tokens=max_tokens,
+                        top_p=top_p,
+                        frequency_penalty=freq_pen,
+                        presence_penalty=pres_pen,
+                    )
+
+                # Normalize the choice/message extraction across SDK versions
+                choice = None
+                try:
+                    choice = response['choices'][0]
+                except Exception:
+                    try:
+                        choice = response.choices[0]
+                    except Exception:
+                        choice = None
+
+                msg = None
+                if choice is not None:
+                    # try dict-like access
+                    try:
+                        if isinstance(choice, dict) and 'message' in choice:
+                            msg = choice['message']
+                    except Exception:
+                        pass
+                    # try attribute access
+                    if msg is None:
+                        try:
+                            msg = getattr(choice, 'message', None)
+                        except Exception:
+                            msg = None
+                    # fallback to text field
+                    if msg is None:
+                        try:
+                            if isinstance(choice, dict):
+                                text = choice.get('text')
+                            else:
+                                text = getattr(choice, 'text', None)
+                        except Exception:
+                            text = None
+                        msg = {"role": "assistant", "content": text or ''}
 
                 append_to_chat_history(msg)
                 st.chat_message("assistant").write(msg.get('content', ''))
