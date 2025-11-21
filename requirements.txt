@@ -8,4 +8,5 @@ openpyxl
 python-pptx
 fpdf
 openai
+reportlab
 python-docx
