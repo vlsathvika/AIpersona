@@ -2,6 +2,14 @@ import os
 import json
 import streamlit as st
 from fpdf import FPDF
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate
+    USE_REPORTLAB = True
+except Exception:
+    USE_REPORTLAB = False
 import openai
 try:
     from openai.error import OpenAIError
@@ -19,21 +27,42 @@ except Exception:
 
 
 # Function to convert JSON chat history to PDF
-def convert_json_to_pdf(json_data):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    for message in json_data:
-        role = message['role']
-        content = message['content']
+def convert_json_to_pdf_bytes(json_data):
+    """Return PDF bytes for given chat history. Prefer reportlab for UTF-8 support, fallback to FPDF."""
+    if USE_REPORTLAB:
+        from io import BytesIO
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        for message in json_data:
+            role = message.get('role', 'assistant').capitalize()
+            content = message.get('content', '')
+            # escape content for Paragraph
+            ptext = f"<b>{role}:</b> {content}"
+            story.append(Paragraph(ptext, styles['Normal']))
+            story.append(Paragraph('<br/>', styles['Normal']))
+        doc.build(story)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+    else:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
         
-        # Encode content to utf-8
-        content = content.encode('latin-1', 'replace').decode('latin-1')
-        
-        pdf.multi_cell(0, 10, f"{role.capitalize()}: {content}", border=0, align='L', fill=False)
-    
-    return pdf
+        for message in json_data:
+            role = message.get('role', 'assistant')
+            content = message.get('content', '')
+            # Encode to latin-1 with replacement to avoid crashes
+            content = content.encode('latin-1', 'replace').decode('latin-1')
+            pdf.multi_cell(0, 10, f"{role.capitalize()}: {content}", border=0, align='L', fill=False)
+        from io import BytesIO
+        buffer = BytesIO()
+        pdf.output(buffer)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
     
 
 
@@ -179,9 +208,17 @@ else:
         else:
             st.session_state["messages"] = [{"role": "system", "content": "You are a friendly agent. Respond in the voice and behaviour of the selected character."}]
 
-    # Function to save the chat history to a file
-    def save_chat_history_to_file(filename):
+    # Helper: per-character history filename
+    def history_filename_for(character_name):
+        safe = character_name.replace(' ', '_').lower()
+        return f"chat_history_{safe}.json"
+
+    # Function to save the chat history to a file (per-character)
+    def save_chat_history_to_file(character_name=None):
         try:
+            if character_name is None:
+                character_name = st.session_state.get('current_character', None) or character
+            filename = history_filename_for(character_name)
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(st.session_state["messages"], f, ensure_ascii=False)
         except Exception as e:
@@ -197,8 +234,16 @@ else:
             content = getattr(response, 'content', '')
 
         st.session_state["messages"].append({"role": role, "content": content})
-        # Persist immediately
-        save_chat_history_to_file('chat_history.json')
+        # Persist immediately (save under current character)
+        try:
+            save_chat_history_to_file()
+        except Exception:
+            # last-resort fallback to a generic file
+            try:
+                with open('chat_history.json', 'w', encoding='utf-8') as f:
+                    json.dump(st.session_state["messages"], f, ensure_ascii=False)
+            except Exception:
+                pass
 
     # Normalize a choice object/dict from different SDKs into a simple message dict
     def normalize_choice_to_message(choice):
@@ -242,19 +287,78 @@ else:
             content = ''
         return {"role": role, "content": content}
 
-    # Select a character
-    character = st.sidebar.selectbox("Select a Character", list(characters.keys()))
+    # Sidebar: character controls
+    lock_character = st.sidebar.checkbox("Lock character (prevent switching)", value=False)
+    auto_clear_on_change = st.sidebar.checkbox("Auto-clear conversation when changing character", value=False)
+    include_examples = st.sidebar.checkbox("Include few-shot examples in system prompt", value=False)
+
+    # Ensure current_character exists
+    if 'current_character' not in st.session_state:
+        st.session_state['current_character'] = list(characters.keys())[0]
+
+    char_list = list(characters.keys())
+    # If locked, force the selectbox to display the current character index
+    if lock_character:
+        default_index = char_list.index(st.session_state['current_character']) if st.session_state['current_character'] in char_list else 0
+        selected = st.sidebar.selectbox("Select a Character", char_list, index=default_index)
+    else:
+        # allow user to pick; default to current_character
+        default_index = char_list.index(st.session_state['current_character']) if st.session_state['current_character'] in char_list else 0
+        selected = st.sidebar.selectbox("Select a Character", char_list, index=default_index)
+
+    # Determine active character without writing to widget-backed session_state keys
+    if lock_character:
+        character = st.session_state['current_character']
+        if selected != character:
+            st.warning(f"Character is locked. Staying with '{character}'. Uncheck 'Lock character' to change.")
+    else:
+        character = selected
+        # If changed, load or clear history as requested
+        if character != st.session_state.get('current_character'):
+            attempted = character
+            if auto_clear_on_change:
+                st.session_state['messages'] = [{"role": "system", "content": ""}]
+                try:
+                    fname = history_filename_for(attempted)
+                    if os.path.exists(fname):
+                        os.remove(fname)
+                except Exception:
+                    pass
+            else:
+                try:
+                    fname = history_filename_for(attempted)
+                    if os.path.exists(fname):
+                        with open(fname, 'r', encoding='utf-8') as f:
+                            loaded = json.load(f)
+                            if isinstance(loaded, list) and loaded:
+                                st.session_state['messages'] = loaded
+                except Exception:
+                    st.session_state['messages'] = [{"role": "system", "content": ""}]
+
+            st.session_state['current_character'] = character
 
     # Get the bot's name for the selected character
     bot_name = characters[character]["Name"]
 
-    # Model / response tuning controls in the sidebar
-    with st.sidebar.expander("Model settings"):
-        temp = st.slider("Temperature", 0.0, 1.0, 0.7, 0.05, help="Higher = more creative; lower = more deterministic")
-        top_p = st.slider("top_p", 0.0, 1.0, 1.0, 0.05)
-        freq_pen = st.slider("frequency_penalty", -2.0, 2.0, 0.0, 0.1)
-        pres_pen = st.slider("presence_penalty", -2.0, 2.0, 0.0, 0.1)
-        max_tokens = st.number_input("Max tokens", min_value=64, max_value=4096, value=1024, step=64)
+    # Model / response tuning controls in the sidebar (hidden by default for non-technical users)
+    # Provide sensible defaults and let advanced users reveal controls explicitly
+    temp = 0.7
+    top_p = 1.0
+    freq_pen = 0.0
+    pres_pen = 0.0
+    max_tokens = 1024
+
+    st.sidebar.write("Model settings: using sensible defaults for non-technical users.")
+    st.sidebar.write(f"Temperature: {temp} (default)")
+
+    show_advanced = st.sidebar.checkbox("Show advanced model settings", value=False)
+    if show_advanced:
+        with st.sidebar.expander("Advanced model settings", expanded=True):
+            temp = st.slider("Temperature", 0.0, 1.0, temp, 0.05, help="Higher = more creative; lower = more deterministic")
+            top_p = st.slider("top_p", 0.0, 1.0, top_p, 0.05)
+            freq_pen = st.slider("frequency_penalty", -2.0, 2.0, freq_pen, 0.1)
+            pres_pen = st.slider("presence_penalty", -2.0, 2.0, pres_pen, 0.1)
+            max_tokens = st.number_input("Max tokens", min_value=64, max_value=4096, value=max_tokens, step=64)
 
     st.title(f"🧑‍💻 {bot_name} Online 💬 Chatbot")
     st.write(f"My name is {bot_name}🤖. I know many things, ask me anything you like, but please, don't ask me stupid questions❓")
@@ -265,9 +369,9 @@ else:
         st.subheader(key)
         st.write(value)
 
-    # General questions section
-    st.subheader("Ask General Questions")
-    general_question = st.text_input("Ask a general question about this character's behaviors or values:")
+    # Chat UI
+    st.subheader("Conversation")
+
     # Helper to build a system message from the chosen character
     def build_system_message(character_key):
         attrs = characters.get(character_key, {})
@@ -285,6 +389,15 @@ else:
             parts.append(f"Avoid using these words/phrases: {avoid}.")
 
         parts.append("Answer concisely, stay in character, and be accurate. Provide 2-3 actionable, persona-aligned suggestions when asked for advice. If medical advice is requested, provide general info and recommend consulting a professional.")
+        # Optionally include few-shot examples to shape output
+        try:
+            if include_examples:
+                parts.append("Examples:")
+                # A generic example that demonstrates numbered, actionable suggestions
+                parts.append("User: I'm having trouble sleeping sometimes.\nAssistant: 1) Create a consistent bedtime routine and stick to it; explain why. 2) Limit caffeine after midday; explain why. 3) Try light exercise earlier in the day; explain why.")
+                parts.append("User: I want to be more productive.\nAssistant: 1) Break tasks into 25-minute focused intervals (Pomodoro); explain briefly. 2) Prioritize top 3 tasks each day; explain briefly.")
+        except Exception:
+            pass
         return ' '.join(parts)
 
     # Ensure the current system message reflects the selected character
@@ -295,15 +408,25 @@ else:
         else:
             st.session_state["messages"].insert(0, {"role": "system", "content": system_msg})
 
-    # Ask a general question using OpenAI
-    if st.button("Ask General Question"):
-        if general_question:
-            user_msg = f"As a {character}, {general_question}"
-            st.session_state["messages"].append({"role": "user", "content": user_msg})
-            st.chat_message("user").write(general_question)
+    # Display the conversation (excluding system messages)
+    for msg in st.session_state["messages"]:
+        if msg.get('role') == 'system':
+            continue
+        try:
+            st.chat_message(msg.get('role')).write(msg.get('content'))
+        except Exception:
+            st.write(f"{msg.get('role')}: {msg.get('content')}")
 
-            try:
-                # Use new OpenAI client if available, otherwise fall back to old openai.ChatCompletion
+    # Collect user input via chat input (Streamlit chat-like UI)
+    user_input = st.chat_input(f"Message as {character}...")
+    if user_input:
+        # append user message and display
+        st.session_state["messages"].append({"role": "user", "content": user_input})
+        st.chat_message("user").write(user_input)
+
+        # Call the model
+        try:
+            with st.spinner("Thinking..."):
                 if client is not None:
                     response = client.chat.completions.create(
                         model="gpt-4o",
@@ -325,106 +448,56 @@ else:
                         presence_penalty=pres_pen,
                     )
 
-                # Normalize the choice/message extraction across SDK versions
-                choice = None
-                try:
-                    choice = response['choices'][0]
-                except Exception:
-                    try:
-                        choice = response.choices[0]
-                    except Exception:
-                        choice = None
-
-                # Normalize choice into a plain message dict and display safely
-                msg = normalize_choice_to_message(choice)
-                append_to_chat_history(msg)
-                st.chat_message("assistant").write(msg["content"])
-
-            except OpenAIError as e:
-                st.error(f"OpenAI API error: {e}")
-            except Exception as e:
-                st.error(f"Unexpected error: {e}")
-        else:
-            st.write("Please enter a question.")
-
-    # Advertising creative section
-    st.subheader("Test Opinions on Advertising Creative")
-    creative_input = st.text_input("Enter a headline or description of an image for the character to review:")
-
-    # Get OpenAI response for advertising creative
-    if st.button("Test Creative"):
-        if creative_input:
-            user_msg = f"As a {character}, what do you think about this: {creative_input}"
-            st.session_state["messages"].append({"role": "user", "content": user_msg})
-            st.chat_message("user").write(creative_input)
-
+            # Normalize and show assistant reply
+            choice = None
             try:
-                if client is not None:
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=st.session_state["messages"],
-                        temperature=temp,
-                        max_tokens=max_tokens,
-                        top_p=top_p,
-                        frequency_penalty=freq_pen,
-                        presence_penalty=pres_pen,
-                    )
-                else:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o",
-                        messages=st.session_state["messages"],
-                        temperature=temp,
-                        max_tokens=max_tokens,
-                        top_p=top_p,
-                        frequency_penalty=freq_pen,
-                        presence_penalty=pres_pen,
-                    )
-
-                # Normalize the choice/message extraction across SDK versions
-                choice = None
+                choice = response['choices'][0]
+            except Exception:
                 try:
-                    choice = response['choices'][0]
+                    choice = response.choices[0]
                 except Exception:
-                    try:
-                        choice = response.choices[0]
-                    except Exception:
-                        choice = None
+                    choice = None
 
-                # Normalize choice into a plain message dict and display safely
-                msg = normalize_choice_to_message(choice)
-                append_to_chat_history(msg)
-                st.chat_message("assistant").write(msg["content"])
+            msg = normalize_choice_to_message(choice)
+            append_to_chat_history(msg)
+            st.chat_message("assistant").write(msg["content"])
 
-            except OpenAIError as e:
-                st.error(f"OpenAI API error: {e}")
-            except Exception as e:
-                st.error(f"Unexpected error: {e}")
-        else:
-            st.write("Please enter a headline or description.")
+        except OpenAIError as e:
+            st.error(f"OpenAI API error: {e}")
+        except Exception as e:
+            st.error(f"Unexpected error: {e}")
 
     # Button to download chat history as PDF
     if st.button("Download Chat History as PDF"):
-        with open('chat_history.json', 'r', encoding='utf-8') as f:
-            chat_history_json = json.load(f)
-        
-        pdf = convert_json_to_pdf(chat_history_json)
-        
-        pdf_output_path = 'chat_history.pdf'
-        
-        pdf.output(pdf_output_path)
-        
-        with open(pdf_output_path, 'rb') as f:
-            pdf_data = f.read()
-        
-        st.download_button(label="Download PDF", data=pdf_data, file_name="chat_history.pdf", mime="application/pdf")
-    
-    # Clear chat history
+        # Prefer per-character history file if present
+        current_char = st.session_state.get('current_character', character)
+        fname = history_filename_for(current_char)
+        try:
+            if os.path.exists(fname):
+                with open(fname, 'r', encoding='utf-8') as f:
+                    chat_history_json = json.load(f)
+            else:
+                chat_history_json = st.session_state.get('messages', [])
+
+            pdf_bytes = convert_json_to_pdf_bytes(chat_history_json)
+
+            st.download_button(label="Download PDF", data=pdf_bytes, file_name=f"chat_history_{current_char.replace(' ', '_')}.pdf", mime="application/pdf")
+        except Exception as e:
+            st.error(f"Failed to generate PDF: {e}")
+
+    # Clear chat history (for current character)
     if st.button("Clear Chat History"):
         st.session_state["messages"] = [{"role": "system", "content": build_system_message(character)}]
         try:
-            if os.path.exists('chat_history.json'):
-                os.remove('chat_history.json')
+            fname = history_filename_for(character)
+            if os.path.exists(fname):
+                os.remove(fname)
         except Exception:
             pass
-        st.success("Chat history cleared.")
+        # persist cleared state for this character
+        try:
+            save_chat_history_to_file(character)
+        except Exception:
+            pass
+        st.success("Chat history cleared for current character.")
     
