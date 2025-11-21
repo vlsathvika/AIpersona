@@ -393,9 +393,13 @@ else:
         try:
             if include_examples:
                 parts.append("Examples:")
-                # A generic example that demonstrates numbered, actionable suggestions
-                parts.append("User: I'm having trouble sleeping sometimes.\nAssistant: 1) Create a consistent bedtime routine and stick to it; explain why. 2) Limit caffeine after midday; explain why. 3) Try light exercise earlier in the day; explain why.")
-                parts.append("User: I want to be more productive.\nAssistant: 1) Break tasks into 25-minute focused intervals (Pomodoro); explain briefly. 2) Prioritize top 3 tasks each day; explain briefly.")
+                # Persona-specific marketing campaign ideas
+                parts.append("User: What marketing ideas do you have for Ben (Balance Seeker)?\nAssistant: 1) Launch a wellness challenge campaign promoting moderation and healthy habits. 2) Partner with local gyms for balanced lifestyle workshops. 3) Create content around practical wellness tips for everyday life.")
+                parts.append("User: What marketing ideas do you have for Paige (Priority Juggler)?\nAssistant: 1) Run a time-saving tips series for busy parents. 2) Offer bundled family health packages with flexible scheduling. 3) Use relatable stories in ads showing multitasking and care.")
+                parts.append("User: What marketing ideas do you have for Willy (Willful Endurer)?\nAssistant: 1) Highlight resilience stories in your campaign. 2) Promote products/services that support chronic condition management. 3) Host community events for sharing strength and endurance.")
+                parts.append("User: What marketing ideas do you have for Sarah (Self Achiever)?\nAssistant: 1) Feature success stories and goal achievement in ads. 2) Offer exclusive rewards for proactive health actions. 3) Collaborate with career coaches for branded webinars.")
+                parts.append("User: What marketing ideas do you have for Tim (Trustful Responder)?\nAssistant: 1) Use testimonials to build trust in your brand. 2) Provide clear, step-by-step guides for using your services. 3) Run campaigns that emphasize reliability and support.")
+        except Exception:
         except Exception:
             pass
         return ' '.join(parts)
@@ -501,3 +505,4 @@ else:
             pass
         st.success("Chat history cleared for current character.")
     
+
